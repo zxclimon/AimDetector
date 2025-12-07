@@ -15,6 +15,8 @@ public final class ProjectAIM implements HeuristicComponent {
     private float rankBuffer = 0.0f;
     private float linearBuffer = 0.0f;
     private float patternBuffer = 0.0f;
+    private float gcdBuffer = 0.0f;
+    private int lowGcdStreak = 0;
     private int sampleCount = 0;
     private static final int SAMPLE_SIZE = 100;
     private static final double EXPANDER = Math.pow(2, 24);
@@ -178,17 +180,26 @@ public final class ProjectAIM implements HeuristicComponent {
         if (dy < 0.25 || dp < 0.25 || dy > 20.0 || dp > 20.0) {
             return;
         }
+
         long expandedPitch = (long) (EXPANDER * dp);
         long expandedLastPitch = (long) (EXPANDER * lastDp);
         long gcd = getGcd(expandedPitch, expandedLastPitch);
 
-        if (gcd < 131072L && lastDp > 0.25) {
-            patternBuffer += 0.5f;
-            if (patternBuffer > 10.0f) {
-                profile.punish("Aim", "ProjectAIM",
-                        String.format("GCD gcd=%d", gcd), 2.0f);
-                patternBuffer = 8.0f;
+        if (gcd > 0 && gcd < 131072L && lastDp > 0.25) {
+            lowGcdStreak++;
+
+            if (lowGcdStreak >= 3) {
+                gcdBuffer += 0.6f;
+
+                if (gcdBuffer > 12.0f) {
+                    profile.punish("Aim", "ProjectAIM",
+                            String.format("GCD gcd=%d streak=%d", gcd, lowGcdStreak), 2.0f);
+                    gcdBuffer = 9.0f;
+                    lowGcdStreak = 0;
+                }
             }
+        } else {
+            lowGcdStreak = Math.max(0, lowGcdStreak - 1);
         }
     }
 
@@ -197,6 +208,7 @@ public final class ProjectAIM implements HeuristicComponent {
         rankBuffer = Math.max(0, rankBuffer - 0.05f);
         linearBuffer = Math.max(0, linearBuffer - 0.08f);
         patternBuffer = Math.max(0, patternBuffer - 0.1f);
+        gcdBuffer = Math.max(0, gcdBuffer - 0.08f);
     }
 
     private List<Float> getJiffDelta(List<Float> data, int depth) {
