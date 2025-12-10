@@ -12,6 +12,8 @@ public final class ProjectAIM implements HeuristicComponent {
     private float prevYaw, prevPitch;
     private float bufRank, bufLinear, bufPattern, bufGcd;
     private int gcdStreak;
+    private long lastGcd;
+    private int sameGcdCount;
 
     public ProjectAIM(AimHeuristicCheck parent) {
         this.parent = parent;
@@ -144,26 +146,31 @@ public final class ProjectAIM implements HeuristicComponent {
     }
 
     private void runGcdCheck(float dy, float dp) {
-        if (dy < 0.25f || dp < 0.25f || dy > 20f || dp > 20f) return;
+        if (dy < 0.25f || dp < 0.25f || dy > 25f || dp > 25f) return;
         if (prevPitch < 0.25f) return;
 
         long exp = (long) (Statistics.EXPANDER * dp);
         long expPrev = (long) (Statistics.EXPANDER * prevPitch);
         long gcd = gcd(exp, expPrev);
 
-        if (gcd > 0 && gcd < 8192L) {
+        boolean lowGcd = gcd > 0 && gcd < 150000L;
+
+        if (lowGcd) {
             gcdStreak++;
             if (gcdStreak >= 6) {
-                bufGcd += 0.6f;
-                if (bufGcd > 12f) {
-                    parent.getProfile().punish("Aim", "ProjectAIM", "gcd=" + gcd + " s=" + gcdStreak, 2f);
-                    bufGcd = 9f;
+                bufGcd += 1.2f;
+                if (bufGcd > 8f) {
+                    parent.getProfile().punish("Aim", "ProjectAIM", "gcd=" + gcd + " s=" + gcdStreak, 2.5f);
+                    bufGcd = 5f;
                     gcdStreak = 0;
                 }
             }
         } else {
             gcdStreak = Math.max(0, gcdStreak - 2);
+            bufGcd = dec(bufGcd, 0.5f);
         }
+
+        lastGcd = gcd;
     }
 
     private void tick() {
