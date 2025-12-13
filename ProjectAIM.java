@@ -11,9 +11,8 @@ public final class ProjectAIM implements HeuristicComponent {
 
     private float prevYaw, prevPitch;
     private float bufRank, bufLinear, bufPattern, bufGcd;
-    private int gcdStreak;
-    private long lastGcd;
-    private int sameGcdCount;
+    private final List<Long> gcdHistory = new ArrayList<>(32);
+    private int lowGcdCount;
 
     public ProjectAIM(AimHeuristicCheck parent) {
         this.parent = parent;
@@ -153,24 +152,48 @@ public final class ProjectAIM implements HeuristicComponent {
         long expPrev = (long) (Statistics.EXPANDER * prevPitch);
         long gcd = gcd(exp, expPrev);
 
-        boolean lowGcd = gcd > 0 && gcd < 150000L;
-
-        if (lowGcd) {
-            gcdStreak++;
-            if (gcdStreak >= 6) {
-                bufGcd += 1.2f;
-                if (bufGcd > 8f) {
-                    parent.getProfile().punish("Aim", "ProjectAIM", "gcd=" + gcd + " s=" + gcdStreak, 2.5f);
-                    bufGcd = 5f;
-                    gcdStreak = 0;
-                }
-            }
-        } else {
-            gcdStreak = Math.max(0, gcdStreak - 2);
-            bufGcd = dec(bufGcd, 0.5f);
+        if (gcd > 0) {
+            gcdHistory.add(gcd);
+            if (gcd < 120000L) lowGcdCount++;
         }
 
-        lastGcd = gcd;
+        if (gcdHistory.size() >= 20) {
+            int total = gcdHistory.size();
+            int highCount = 0;
+            for (long g : gcdHistory) {
+                if (g > 250000L) highCount++;
+            }
+
+            double lowRatio = (double) lowGcdCount / total;
+            double highRatio = (double) highCount / total;
+
+            List<Long> lowOnly = new ArrayList<>();
+            for (long g : gcdHistory) {
+                if (g < 150000L) lowOnly.add(g);
+            }
+
+            int uniqueLow = new HashSet<>(lowOnly).size();
+            double uniqueRatio = lowOnly.isEmpty() ? 0 : (double) uniqueLow / lowOnly.size();
+
+            boolean mostlyLow = lowRatio > 0.75;
+            boolean noHighSpikes = highRatio < 0.1;
+            boolean chaotic = uniqueRatio > 0.65;
+
+            if (mostlyLow && noHighSpikes && chaotic) {
+                bufGcd += 3.5f;
+                if (bufGcd > 5f) {
+                    parent.getProfile().punish("Aim", "ProjectAIM", "gcd low=" + fmt(lowRatio) + " high=" + highCount, 3f);
+                    bufGcd = 2f;
+                }
+            } else if (highRatio > 0.15) {
+                bufGcd = dec(bufGcd, 4f);
+            } else {
+                bufGcd = dec(bufGcd, 1f);
+            }
+
+            gcdHistory.clear();
+            lowGcdCount = 0;
+        }
     }
 
     private void tick() {
